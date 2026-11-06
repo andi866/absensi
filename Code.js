@@ -56,9 +56,17 @@ const AUTH_CONFIG = {
 };
 
 // Dinaikkan setiap ada perubahan; ditampilkan di layar Profil bersama versi aplikasi (index.html) untuk memastikan deploy sudah benar.
-const APP_VERSION = '2026-10-18.1';
+const APP_VERSION = '2026-11-06.1';
 
-function doGet() {
+function jsonOut_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  // ?ping=1 -> balasan JSON kecil. Dipakai untuk memastikan web app bisa dipanggil dari aplikasi yang di-hosting di GitHub.
+  if (e && e.parameter && e.parameter.ping) {
+    return jsonOut_({ ok: true, app: APP_CONFIG.APP_TITLE, version: APP_VERSION });
+  }
   const out = HtmlService
     .createHtmlOutputFromFile('index')
     .setTitle(APP_CONFIG.APP_TITLE)
@@ -71,6 +79,32 @@ function doGet() {
     if (logo) out.setFaviconUrl(logo);
   } catch (e) {}
   return out;
+}
+
+/**
+ * API untuk aplikasi yang di-hosting di LUAR Apps Script (mis. GitHub Pages). Aplikasi mengirim
+ *   POST  {"fn":"apiVerifyPin","args":[{...}]}
+ * lalu fungsi bernama itu dijalankan dan hasilnya dibalas sebagai JSON {ok:true,value} atau {ok:false,error}.
+ * Hanya fungsi berawalan "api" (tanpa garis bawah di akhir) yang boleh dipanggil: sama persis dengan yang sudah bisa dipanggil
+ * lewat google.script.run, dan setiap fungsi tetap memeriksa sesi/PIN sendiri.
+ */
+function doPost(e) {
+  let out;
+  try {
+    const raw = e && e.postData && e.postData.contents;
+    let req;
+    try { req = JSON.parse(raw || '{}'); } catch (x) { throw new Error('Permintaan tidak valid.'); }
+    const fn = String((req && req.fn) || '');
+    if (!/^api[A-Z][A-Za-z0-9]*$/.test(fn)) throw new Error('Fungsi tidak dikenal.');
+    const target = globalThis[fn];
+    if (typeof target !== 'function') throw new Error('Fungsi tidak dikenal.');
+    const args = Array.isArray(req.args) ? req.args : [];
+    const value = target.apply(null, args);
+    out = { ok: true, value: value === undefined ? null : value };
+  } catch (err) {
+    out = { ok: false, error: String((err && err.message) || err) };
+  }
+  return jsonOut_(out);
 }
 
 function getLogoUrl_() {

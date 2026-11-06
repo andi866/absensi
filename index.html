@@ -2061,11 +2061,12 @@
 
     <div id="installAppModal" class="modal hidden">
       <div class="modal-card" style="text-align:center">
-        <div style="width:64px;height:64px;border-radius:18px;background:var(--orange);color:#fff;font-weight:900;font-size:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px">ELS</div>
+        <img id="installAppIcon" alt="" style="width:72px;height:72px;border-radius:20px;display:block;margin:0 auto 14px;box-shadow:0 8px 20px rgba(226,89,10,.28)">
         <div class="modal-title" style="text-align:center">Pasang di Layar Utama</div>
         <div class="modal-sub" style="text-align:center;margin-bottom:16px">Biar makin gampang diakses, kayak buka aplikasi biasa — nggak perlu buka browser dulu.</div>
         <div id="installAppSteps" class="card card-pad" style="text-align:left;font-size:13px;line-height:1.7;background:#f9fafb"></div>
         <div style="height:14px"></div>
+        <button id="btnInstallNow" class="btn btn-primary hidden" onclick="installNow_()" style="margin-bottom:8px">Pasang Sekarang</button>
         <button class="btn btn-primary" onclick="dismissInstallPrompt(true)">Mengerti, Jangan Tampilkan Lagi</button>
         <button class="btn btn-light" style="margin-top:8px" onclick="dismissInstallPrompt(false)">Nanti Saja</button>
       </div>
@@ -4490,6 +4491,24 @@
       return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     }
 
+    // Android/Chrome: tombol "Pasang Sekarang" (sekali ketuk). Peramban memberi izin lewat beforeinstallprompt, hanya di halaman utama (bukan di Apps Script).
+    var deferredInstall_ = null;
+    window.addEventListener('beforeinstallprompt', function(e){
+      e.preventDefault(); deferredInstall_ = e;
+      var b = document.getElementById('btnInstallNow'); if(b) b.classList.remove('hidden');
+      var s = document.getElementById('installAppSteps'); if(s) s.classList.add('hidden');       // ada tombol sekali ketuk: langkah manual tak perlu
+    });
+    window.addEventListener('appinstalled', function(){
+      deferredInstall_ = null; LS.setItem('els_install_prompt_dismissed', '1');
+      var m = document.getElementById('installAppModal'); if(m) m.classList.add('hidden');
+    });
+    function installNow_(){
+      if(!deferredInstall_) return;
+      var ev = deferredInstall_; deferredInstall_ = null;
+      document.getElementById('btnInstallNow').classList.add('hidden');
+      try{ ev.prompt(); }catch(e){}
+    }
+
     function maybeShowInstallPrompt(){
       if(needsPhotoSetup()){ setTimeout(function(){ openPhotoSetupModal(); }, 600); return; }
       if(isRunningStandalone_()) return; // sudah dipasang & dibuka sebagai app, gak perlu diingatkan lagi
@@ -4521,6 +4540,10 @@
       }
 
       document.getElementById('installAppSteps').innerHTML = stepsHtml;
+      var ic = document.querySelector('link[rel="apple-touch-icon"]'), im = document.getElementById('installAppIcon');
+      if(ic && im) im.src = ic.href;
+      document.getElementById('installAppSteps').classList.toggle('hidden', !!deferredInstall_);
+      if(deferredInstall_) document.getElementById('btnInstallNow').classList.remove('hidden');
       setTimeout(function(){
         document.getElementById('installAppModal').classList.remove('hidden');
       }, 1200);
@@ -6113,7 +6136,12 @@
     // Apakah bingkai ini DILARANG memakai kamera? true / false / null (belum diketahui)
     // Chrome/Edge punya API untuk bertanya langsung. Safari/iOS tidak punya: bingkai Apps Script tidak mengizinkan kamera di sana,
     // jadi langsung dianggap terblokir (kamera dibuka di jendela baru yang berbingkai). Peramban lain belajar dari percobaan sebelumnya.
+    // Aplikasi berjalan di dalam bingkai (iframe) atau sebagai halaman utama? Di Apps Script selalu di dalam bingkai Google;
+    // di GitHub Pages (PWA) halaman utama, sehingga kamera & lokasi bisa langsung dipakai tanpa jendela terpisah.
+    function inFrame_(){ try{ return window.self !== window.top; }catch(e){ return true; } }
+
     function cameraBlockedByFrame(){
+      if(!inFrame_()) return false;
       try{
         var fp = document.permissionsPolicy || document.featurePolicy;
         if(fp && typeof fp.allowsFeature === 'function') return fp.allowsFeature('camera') === false;
@@ -7183,7 +7211,7 @@
 
     /* ===== Menu Favorit di beranda promotor: dipilih manager (Pengaturan Admin) ===== */
     /* ===== Versi: memastikan deploy server dan aplikasi sama ===== */
-    var CLIENT_VERSION = '2026-10-18.1';
+    var CLIENT_VERSION = '2026-11-06.1';
     var versionWarned_ = false;
     function renderVersionLine_(data){
       var sv = data && data.serverVersion ? String(data.serverVersion) : '';
